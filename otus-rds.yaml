@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Otus RDS PostgreSQL test stack"
+Parameters:
+
+  OtusRdsPassword:
+    NoEcho: "true"
+    Description: "The database admin account password"
+    Type: "String"
+    MinLength: "8"
+    MaxLength: "41"
+    ConstraintDescription: "Must contain only alphanumeric characters."
+
+  OtusSubnet1:
+    Description: "A VPC subnet ID in AZ1."
+    Type: "AWS::EC2::Subnet::Id"
+
+  OtusSubnet2:
+    Description: "A VPC subnet ID in AZ2."
+    Type: "AWS::EC2::Subnet::Id"
+
+  OtusSubnet3:
+    Description: "A VPC subnet ID in AZ3."
+    Type: "AWS::EC2::Subnet::Id"
+
+Resources:
+
+  OtusRdsSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: "Otus DB Subnet Group"
+      SubnetIds:
+      - !Ref "OtusSubnet1"
+      - !Ref "OtusSubnet2"
+      - !Ref "OtusSubnet3"
+
+  OtusRdsDBParameterGroup:
+      Type: "AWS::RDS::DBParameterGroup"
+      Properties: 
+          Description: Otus DB parameter group 
+          Family: postgres11
+          Parameters:
+            max_connections: 20
+            rds.force_ssl: '1'
+
+  OtusRDSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Otus RDS Security Group"
+      Tags:
+      - Key: "otus"
+        Value: "yes"
+
+  OtusRDSSecurityGroupSelfIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt 'OtusRDSSecurityGroup.GroupId'
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !GetAtt 'OtusRDSSecurityGroup.GroupId'
+
+  OtusRdsInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 10
+      AllowMajorVersionUpgrade: false
+#      AssociatedRoles: 
+#        - DBInstanceRole
+      AutoMinorVersionUpgrade: false
+#      AvailabilityZone: String
+      BackupRetentionPeriod: 0
+#      CharacterSetName: String
+      CopyTagsToSnapshot: true
+#      DBClusterIdentifier: String
+      DBInstanceClass: db.t3.micro
+#      DBInstanceIdentifier: String
+#      DBName: String
+      DBParameterGroupName: !Ref OtusRdsDBParameterGroup
+#      DBSecurityGroups: 
+#        - String
+#      DBSnapshotIdentifier: String
+      DBSubnetGroupName: !Ref OtusRdsSubnetGroup
+#      DeleteAutomatedBackups: Boolean
+#      DeletionProtection: Boolean
+#      Domain: String
+#      DomainIAMRoleName: String
+      EnableCloudwatchLogsExports: 
+        - postgresql
+        - upgrade
+      EnableIAMDatabaseAuthentication: true
+#      EnablePerformanceInsights: Boolean
+      Engine: postgres
+      EngineVersion: 11.5
+#      Iops: Integer
+#      KmsKeyId: String
+#      LicenseModel: String
+      MasterUsername: postgres
+      MasterUserPassword: !Ref OtusRdsPassword
+#      MonitoringInterval: Integer
+#      MonitoringRoleArn: String
+      MultiAZ: false
+#      OptionGroupName: String
+#      PerformanceInsightsKMSKeyId: String
+#      PerformanceInsightsRetentionPeriod: Integer
+#      Port: String
+#      PreferredBackupWindow: 22:00-06:00
+#      PreferredMaintenanceWindow: 22:00-06:00
+#      ProcessorFeatures: 
+#        - ProcessorFeature
+#      PromotionTier: Integer
+      PubliclyAccessible: true
+#      SourceDBInstanceIdentifier: String
+#      SourceRegion: String
+#      StorageEncrypted: Boolean
+#      StorageType: String
+      Tags: 
+        - Key: otus
+          Value: yes
+#      Timezone: String
+#      UseDefaultProcessorFeatures: Boolean
+      VPCSecurityGroups: 
+        - !GetAtt 'OtusRDSSecurityGroup.GroupId'
+
+Outputs:
+
+  OtusRDSSecurityGroup:
+    Description: 'Otus RDS Security Group ID'
+    Value: !GetAtt 'OtusRDSSecurityGroup.GroupId'
+    Export:
+      Name: !Sub '${AWS::StackName}-OtusRDSSecurityGroup'

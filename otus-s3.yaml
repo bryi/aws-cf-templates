@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Otus Test S3 Bucket'
+
+Parameters:
+
+  OtusUser:
+    Description: 'Name of user who creates stack'
+    Type: String
+
+  OtusUserEmail:
+    Description: 'Email for SNS notifications'
+    Type: String
+
+  OtusUserEC2Stack:
+    Description: 'Otus students EC2 instances stack'
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: '^[a-zA-Z][-a-zA-Z0-9]*$'
+
+Resources:
+
+  OtusS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+#      AccelerateConfiguration:
+#        AccelerationStatus: Suspended
+#      AccessControl: PublicRead
+#      AnalyticsConfigurations:
+#        - Id: 1
+#          Prefix: !Sub $OtusUser/
+#          TagFilters:
+#            - Key: otus
+#              Values: yes
+#          StorageClassAnalysis:
+#            DataExport:
+#              - OutputSchemaVersion: V_1
+#                Destination:
+#                  BucketAccountId: String
+#                  BucketArn: 'arn:aws:s3:::otus-test'
+#                  Format: CSV
+#                  Prefix: s3-otus-analytics
+#      BucketEncryption:
+#        ServerSideEncryptionConfiguration:
+#          - ServerSideEncryptionByDefault:
+#              KMSMasterKeyID: 'arn:aws:kms:eu-north-1:111111111:key/otus-test'
+#              SSEAlgorithm: 'aws:kms'
+#      BucketName: 'otus-s3-test'
+#      CorsConfiguration:
+#        CorsRules:
+#          - Id: OtusTestCorsRule
+#            AllowedHeaders:
+#              - 'x-amz-*'
+#              - 'Authorization'
+#            AllowedMethods:
+#              - GET
+#              - PUT
+#              - HEAD
+#              - POST
+#              - DELETE
+#            AllowedOrigins:
+#              - 'http://otus.ru'
+#            ExposedHeaders:
+#              - 'Content-Type'
+#              - 'Date'
+#              - 'ETag'
+#            MaxAge: 300
+#      InventoryConfigurations:
+#        - Id: Id
+#          Enabled: False
+#          IncludedObjectVersions: All
+#          Prefix: !Sub $OtusUser/
+#          ScheduleFrequency: Weekly
+#          Destination:
+#            BucketAccountId: String
+#            BucketArn: 'arn:aws:s3:::otus-test'
+#            Format: CSV
+#            Prefix: s3-otus-inventory
+#      LifecycleConfiguration:
+#        Rules:
+#          - AbortIncompleteMultipartUpload:
+#              DaysAfterInitiation: 7
+#            Status: Enabled
+#          - NoncurrentVersionExpirationInDays: 1
+#            Status: Disabled
+#          - ExpirationInDays: 365
+#            Status: Disabled
+#          - Status: Disabled
+#            Transitions:
+#              - StorageClass: GLACIER
+#                TransitionInDays: 30
+#      LoggingConfiguration:
+#        DestinationBucketName: otus-test
+#        LogFilePrefix: OtusS3BucketLogFiles/
+#      MetricsConfigurations:
+#        - Id: AllObjects
+#        - Id: !Ref OtusUser
+#          Prefix: !Sub '${OtusUser}/'
+#          TagFilters:
+#            - Key: otus
+##              Values: yes
+#      NotificationConfiguration:
+#        TopicConfigurations:
+#          - Event: 's3:ObjectRemoved:*'
+#            Topic: !Ref OtusSNSTopic
+#          - Event: 's3:ObjectCreated:*'
+#            Topic: !Ref OtusSNSTopic
+      Tags:
+        - Key: student
+          Value: !Ref OtusUser
+#      VersioningConfiguration:
+#        Status: Suspended
+      WebsiteConfiguration:
+        IndexDocument: 'NGC6543.jpg'
+        ErrorDocument: 'The_Cats_Eye_Nebula.jpg'
+#        RoutingRules:
+#        - RedirectRule:
+#            HostName: !Sub ${ImgResizerApi}.execute-api.${AWS::Region}.amazonaws.com
+#            HttpRedirectCode: 307
+#            Protocol: https
+#            ReplaceKeyPrefixWith: !Sub ${ImgResizerApiStage}?key=
+#          RoutingRuleCondition:
+#            HttpErrorCodeReturnedEquals: 404
+#            KeyPrefixEquals: images/
+#        RedirectAllRequestsTo:
+#          HostName:
+#            'Fn::ImportValue': !Sub '${OtusUserEC2Stack}-PublicIp'
+#          Protocol: http
+
+  OtusS3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref OtusS3Bucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+            - 's3:GetObject'
+            Resource:
+            - !Sub 'arn:aws:s3:::${OtusS3Bucket}/*'
+            Principal: '*'
+
+#  OtusSNSTopic:
+#    Type: 'AWS::SNS::Topic'
+#    Properties:
+#      Subscription:
+#        - Protocol: email
+#          Endpoint: !Ref OtusUserEmail
+#
+#  OtusSNSTopicPolicy:
+#    Type: 'AWS::SNS::TopicPolicy'
+#    Properties:
+#      Topics:
+#        - !Ref OtusSNSTopic
+#      PolicyDocument:
+#        Version: 2012-10-17
+#        Statement:
+#          - Effect: Allow
+#            Principal:
+#              Service: s3.amazonaws.com
+#            Action:
+#              - 'SNS:Publish'
+#            Resource: '*'
+#            Condition:
+#              ArnLike:
+#                'aws:SourceArn': !Join
+#                  - ''
+#                  - - 'arn:aws:s3:*:*:'
+#                    - !Ref OtusS3Bucket

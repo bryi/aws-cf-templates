@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Otus students EC2 instances stack"
+
+Parameters:
+
+  OtusUserPublicSecurityGroup:
+    Description: "Default Public Security Group ID for Otus User"
+    Type: String
+
+  OtusAMI:
+    Description: 'The ID of the AMI. Please, use free tier AMIs, ubuntu 18.04, for example'
+    Type: String
+    Default: ami-1dab2163
+
+  OtusUserEc2InstanceKeyName:
+    Description: 'Name of an existing EC2 KeyPair to enable SSH access to the instances'
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: 'must be the name of an existing EC2 KeyPair.'
+
+  OtusPermissionsBoundary:
+    Description: 'The ARN of the policy used to set the permissions boundary for the role.'
+    Type: String
+    Default: 'arn:aws:iam::986015007877:policy/otus-iam-OtusStudentPermissionsBoundary-HX5DA98N2A9O'
+
+  OtusTestS3Bucket:
+    Description: 'Name (not ARN!) of S3 bucket for tests'
+    Type: String
+    Default: 'otus-test'
+
+  OtusUser:
+    Description: 'Name of user who creates stack'
+    Type: String
+
+
+Resources:
+
+  OtusEc2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      PermissionsBoundary: !Ref OtusPermissionsBoundary
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - 'ec2.amazonaws.com'
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      Policies:
+        - PolicyName: OtusS3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${OtusTestS3Bucket}/*'
+
+  OtusEc2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+        - !Ref OtusEc2Role
+
+  OtusEc2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        SecurityGroupIds:
+          - !Ref OtusUserPublicSecurityGroup
+        TagSpecifications:
+        - ResourceType: instance
+          Tags:
+          - Key: student
+            Value: !Ref OtusUser
+        - ResourceType: volume
+          Tags:
+          - Key: student
+            Value: !Ref OtusUser
+        UserData:
+          'Fn::Base64': !Sub |
+            #!/bin/bash -xe
+            export DEBIAN_FRONTEND=noninteractive
+            LC_ALL=C.UTF-8 add-apt-repository ppa:ondrej/php -y
+            apt-get update
+            apt-get -y upgrade
+            apt-get -y install apache2 php7.2 php7.2-xml unzip python-setuptools
+            mkdir -p /tmp/aws-cfn-bootstrap-latest
+            wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz --output-document=/tmp/aws-cfn-bootstrap-latest.tar.gz
+            tar xz -C /tmp/aws-cfn-bootstrap-latest --strip-components 1 -f /tmp/aws-cfn-bootstrap-latest.tar.gz
+            python /usr/lib/python2.7/dist-packages/easy_install.py /tmp/aws-cfn-bootstrap-latest.tar.gz
+            cp /tmp/aws-cfn-bootstrap-latest/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+            chmod 755 /etc/init.d/cfn-hup
+            update-rc.d cfn-hup defaults
+            cfn-init -v --stack ${AWS::StackName} --resource OtusEc2LaunchTemplate --configsets SetupConfigSet --region ${AWS::Region}
+            cfn-signal --exit-code=$? --stack ${AWS::StackName} --resource OtusEc2Instance --region ${AWS::Region}
+
+        InstanceInitiatedShutdownBehavior: terminate
+        IamInstanceProfile:
+          Arn: !GetAtt OtusEc2InstanceProfile.Arn
+        KeyName: !Ref OtusUserEc2InstanceKeyName
+        ImageId: !Ref OtusAMI
+        Monitoring:
+          Enabled: false
+        CreditSpecification:
+          CpuCredits: standard
+        InstanceType: t3.micro
+        InstanceMarketOptions:
+          SpotOptions:
+            SpotInstanceType: one-time
+            InstanceInterruptionBehavior: terminate
+          MarketType: spot
+        BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+            DeleteOnTermination: true
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          SetupConfigSet:
+            - setup-aws-php-sdk
+            - create-test-index-file
+        setup-aws-php-sdk:
+          files:
+            '/tmp/aws.zip':
+              source: !Sub 'https://docs.aws.amazon.com/aws-sdk-php/v3/download/aws.zip'
+              mode: '000644'
+              owner: root
+              group: root
+          commands:
+            00_extract_aws-sdk-php:
+              command: !Sub |
+                mkdir /var/www/aws-php-sdk
+                unzip /tmp/aws.zip -d /var/www/aws-php-sdk/
+        create-test-index-file:
+          files:
+            '/var/www/html/index.php':
+              content: !Sub |
+                <?php
+                require '../aws-php-sdk/aws-autoloader.php';
+                use Aws\S3\S3Client;
+                use Aws\S3\Exception\S3Exception;
+                $bucket = '${OtusTestS3Bucket}';
+                $keyname = 'NGC6543.jpg';
+                $s3 = new S3Client([
+                  'version' => 'latest',
+                  'region'  => 'eu-north-1'
+                ]);
+                /*try {
+                  $result = $s3->getObject([
+                  'Bucket' => $bucket,
+                  'Key'    => $keyname
+                ]);
+                header("Content-Type: {$result['ContentType']}");
+                  echo $result['Body'];
+                } catch (S3Exception $e) {
+                  echo $e->getMessage() . PHP_EOL;
+                }*/
+                $s3object = $s3->getCommand('GetObject', [
+                    'Bucket' => $bucket,
+                    'Key'    => $keyname
+                ]);
+
+                $s3request = $s3->createPresignedRequest($s3object, '+10 minutes');
+
+                $s3signedUrl = (string) $s3request->getUri();
+                echo "<td><img src='".$s3signedUrl."'></td>";
+
+                ?>
+
+              mode: '000644'
+              owner: root
+              group: root
+          commands:
+            00_delete_index_html_and_restart_apache:
+              command: !Sub |
+                rm -rvf /var/www/html/index.html
+                service apache2 restart
+
+  OtusEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref 'OtusEc2LaunchTemplate'
+        Version: !GetAtt 'OtusEc2LaunchTemplate.LatestVersionNumber'
+      SecurityGroupIds:
+        - !Ref 'OtusUserPublicSecurityGroup'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+Outputs:
+  OtusEc2Instance:
+    Description: 'OtusEc2Instance PublicIp'
+    Value: !GetAtt OtusEc2Instance.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicIp"
